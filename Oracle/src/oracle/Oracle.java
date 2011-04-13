@@ -1,8 +1,5 @@
 package oracle;
 
-// Compile: javac -cp .:lib/ojdbc6.jar Oracle.java
-// Run:     java -Xmx1536M -Xms1024M -cp .:lib/ojdbc6.jar Oracle 1 1000 25 5 5 S 2 > LOG
-
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -29,7 +26,7 @@ public class Oracle
     static String sid = "ssnteit0";
     static String user = "SOLR";
     static String password = "SOLR";
-    static String database = "SOLRA";
+    static String database = "SOLRB";
 
 
     static int total = 0;
@@ -145,11 +142,13 @@ public class Oracle
         return str;
     }
     
-    public static void insertdata() throws Exception {
+    public static int insertdata() throws Exception {
         int total_text_data_size = 0;
         int total_non_text_data_size = 0;
         long total_time = 0;
         long start, end;
+
+        int conta = 1;
 
         for (int b = 0;b < nbatches; b++) {
             int text_data_size = 0;
@@ -192,20 +191,31 @@ public class Oracle
                 total_time += end - start;
             }
             start = System.currentTimeMillis();
-            cstmt.executeBatch();
-            conn.commit();
+            try {
+                cstmt.executeBatch();
+                conn.commit();
+            }
+            catch(BatchUpdateException e) {
+                conta = 0;
+                System.out.println("Erro!");
+            }
+            finally {
+                cstmt.close();
+            }
             end = System.currentTimeMillis();
             total_time += end - start;
 
-            cstmt.close();
             total_text_data_size        += text_data_size;
             total_non_text_data_size    += non_text_data_size;
         }
-        double oracle_size2 = measure_size1();
-        String size_s = String.valueOf(oracle_size2);
+        double oracle_size = measure_size1();
+        double oracle_size2 = measure_size2();
+        double oracle_size3 = measure_size3();
+        String size_s = String.valueOf(oracle_size) + ";" + String.valueOf(oracle_size2) + ";" + String.valueOf(oracle_size3);
         size_s = size_s.replace(".", ",");
-        if (mode == 2)
+        if (mode == 2 && conta == 1)
             System.out.println(registers + ";" + total_time + ";" + (total_text_data_size + total_non_text_data_size) + ";" + size_s);
+        return conta;
     }
     
     public void start_insert(int b,int e) throws Exception {
@@ -214,7 +224,8 @@ public class Oracle
             if (k != b)
                 drop_table();
             create_table();
-            insertdata();
+            if (insertdata() == 0)
+                k -= 1000;            
         }
         conn.close();
     }
@@ -241,7 +252,7 @@ public class Oracle
         cstmt.executeQuery();
         cstmt.close();
 
-        String str2 = "select sum(bytes)/1024 \"Bytes Used\"  from user_segments where segment_name = '" + database + "'";
+        String str2 = "select sum(bytes)/1024 \"Bytes Used\" from dba_segments where segment_name like '%" + database + "%'";
         //String str2 = "SELECT num_rows * avg_row_len \"Bytes Used\" from tabs where table_name = '" + database + "'";
         cstmt = getOracleCallableStatement(str2);
         ResultSet rs = cstmt.executeQuery();
@@ -250,19 +261,25 @@ public class Oracle
     }
 
     private static double measure_size2() throws Exception {
-        String str = "analyze table " + database + " compute statistics";
+        String str = "SELECT blocks*8 \"Bytes Used\" from dba_tables where table_name = '" + database + "'";
         CallableStatement cstmt = getOracleCallableStatement(str);
-        cstmt.executeQuery();
-        cstmt.close();
-
-        String str2 = "SELECT blocks*8 \"Bytes Used\" from user_tables where table_name = '" + database + "'";
-        cstmt = getOracleCallableStatement(str2);
         ResultSet rs = cstmt.executeQuery();
         rs.next();
         double s = rs.getDouble("Bytes used");
         rs.close();
         cstmt.close();
         
+        return s;
+    }
+    
+    private static double measure_size3() throws Exception {
+        String str = "select blocks*8 \"Used Blocks\" , (blocks + empty_blocks)*8 \"Allocated Blocks\" from dba_tables where table_name = '" + database + "'";
+        CallableStatement cstmt = getOracleCallableStatement(str);
+        ResultSet rs = cstmt.executeQuery();
+        rs.next();
+        double s = rs.getDouble("Allocated Blocks");
+        rs.close();
+        cstmt.close();
         return s;
     }
 
@@ -296,14 +313,15 @@ public class Oracle
         CallableStatement cstmt = getOracleCallableStatement(str);
         cstmt.execute();
         cstmt.close();
+        conn.commit();
         for (int k = 0; k < indexed; k++) {
             str = "CREATE INDEX " + name(k) + "_idx_" + database + " ON " + database + "(";
             str += name(k) + "_text)";
             cstmt = getOracleCallableStatement(str);
             cstmt.execute();
             cstmt.close();
+            conn.commit();
         }
-        conn.commit();
     }
     
     private static String name(int l) {
