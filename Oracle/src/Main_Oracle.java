@@ -22,6 +22,8 @@ public class Main_Oracle {
         scenario = Integer.valueOf(args[2]);
         if (args.length > 3)
             var  = Integer.valueOf(args[3]);
+        else
+            var = -1;
 
         if (use_case.contentEquals("insert")) {
             insert();
@@ -59,9 +61,14 @@ public class Main_Oracle {
 
         int beg, end;
         switch (variable) {
+            case -2:                    // Just insert II
+                beg = var;          // Campos de texto
+                end = 5000;         // Registers
+                or.just_insert_text_fields(beg, end, scenario);
+            break;
             case -1:                        // Just insert
                 beg = var;          // batches
-                end = 5000;         // registers
+                end = 2500;         // registers
                 or.just_insert(beg, end);
                 break;
             case 0:                                 // Batches
@@ -117,18 +124,26 @@ public class Main_Oracle {
         switch (variable) {
             case 0:
                 int seconds = 10;
-                oracle.search_seconds(seconds);
+                if (var == -1)
+                    var = 20;
+                oracle.search_seconds(var, seconds, scenario);
                 break;
             case 1:
                 int threads = 200;
                 oracle.search_threads(threads);
                 break;
             case 2:
-                int ops = 200;
-                oracle.search_threads(ops);
+                int beg_ops = 10;
+                int end_ops;
+                switch (scenario) {
+                    case 1:  end_ops = 500; break;
+                    case 2:  end_ops = 200; break;
+                    default: end_ops = 100;
+                }
+                oracle.search_opspersec(beg_ops, end_ops);
                 break;
             case 3:
-                int results = 250;
+                int results = 500;
                 oracle.search_results(results);
                 break;
         }

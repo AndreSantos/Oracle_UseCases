@@ -238,7 +238,22 @@ public class OracleInsert
         cstmt.close();
         return 1;
     }
-    
+    public void just_insert_text_fields(int text, int regs, int scenario) throws Exception {
+        variable    = -2;
+        nbatches    =  2;
+        registers  = regs;
+        textfields = text;
+
+        switch (scenario) {
+            case 1:  indexed = 1;           break;
+            case 2:  indexed = text / 2;    break;
+            default: indexed = text;
+        }
+
+        create_table();
+        insertdata();
+        conn.close();
+    }
     public void just_insert(int b, int r) throws Exception {
         variable  = -1;
         nbatches  =  b;
@@ -344,7 +359,8 @@ public class OracleInsert
         mode        = Integer.parseInt(args[8]);
 
         // Dicionario
-        dictionary_path = "dics/dic_" + args[7] + ".txt";
+        //dictionary_path = "dics/dic_" + args[7] + ".txt";
+        dictionary_path = "dics/dic.txt";
         lerPalavras();
     }
 
