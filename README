@@ -1,5 +1,5 @@
 Platform intended to test an installation of Oracle, through JDBC.
 Use Cases:
-	- Insert  documents
-	- Search  documents
-	- Replace documents
+	- Insert  rows
+	- Search  rows
+	- Replace rows
