@@ -238,10 +238,21 @@ public class OracleInsert
         cstmt.close();
         return 1;
     }
-    public void just_insert_text_fields(int text, int regs, int scenario) throws Exception {
-        variable    = -2;
-        nbatches    =  2;
-        registers  = regs;
+    public void just_insert_indexed_fields(int ind) throws Exception {
+        variable        = -3;
+        nbatches   = Parameters.NBATCHES;
+        registers  = Parameters.NREGISTERS;
+        textfields = Parameters.SEARCH_MAXTEXTFIELDS;
+        indexed    = ind;
+
+        create_table();
+        insertdata();
+        conn.close();
+    }
+    public void just_insert_text_fields(int text, int scenario) throws Exception {
+        variable        = -2;
+        nbatches   = Parameters.NBATCHES;
+        registers  = Parameters.NREGISTERS;
         textfields = text;
 
         switch (scenario) {

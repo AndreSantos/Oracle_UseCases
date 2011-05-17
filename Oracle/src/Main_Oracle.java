@@ -1,7 +1,6 @@
-
 import oracle.OracleInsert;
 import oracle.OracleSearch;
-
+import oracle.Parameters;
 // Compile: javac -cp .:lib/ojdbc6.jar Main_Oracle.java OracleInsert.java
 
 // INSERT:
@@ -11,6 +10,7 @@ public class Main_Oracle {
     static String use_case;
     static int scenario, variable;
     static int var;
+
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.out.println("usage: java -Xmx1536M -Xms1024M Oracle <use_case> <variable> <scenario> [var1]");
@@ -59,92 +59,81 @@ public class Main_Oracle {
             return;
         }
 
-        int beg, end;
         switch (variable) {
+            case -3:                    // Just insert III
+                int indexed = var * Parameters.INSERT_INDEXED_FIELDS_FACTOR;
+                or.just_insert_indexed_fields(indexed);
+                break;
             case -2:                    // Just insert II
-                beg = var;          // Campos de texto
-                end = 5000;         // Registers
-                or.just_insert_text_fields(beg, end, scenario);
-            break;
+                int text_fields = var * Parameters.INSERT_FIELDS_FACTOR;          // Campos de texto
+                or.just_insert_text_fields(text_fields, scenario);
+                break;
             case -1:                        // Just insert
-                beg = var;          // batches
-                end = 2500;         // registers
-                or.just_insert(beg, end);
+                int batches = var;          // batches
+                or.just_insert(batches, Parameters.NREGISTERS);
                 break;
             case 0:                                 // Batches
+                int max_batches;
                 switch (scenario) {
-                    case 1:  end = 2500; break;
-                    case 2:  end = 1200; break;
-                    default: end = 500;
+                    case 1:  max_batches = 2500; break;
+                    case 2:  max_batches = 2000; break;
+                    default: max_batches = 1000;
                 }
-                or.insert_batches(end);
+                or.insert_batches(max_batches);
                 break;
             case 1:                                 // Registers
-                beg = 1000;
-                end = 150000;
-                or.insert_registers(beg, end, scenario);
+                int min_regs = 1000;
+                int max_regs = 150000;
+                or.insert_registers(min_regs, max_regs, scenario);
                 break;
             case 2:                                 // Text Fields
-                end = 990;  // Limite de colunas do OracleInsert = 1000
-                or.insert_text_fields(end, scenario);
+                // Limite de colunas do OracleInsert = 1000 - 5 INTS - 1 ID
+                or.insert_text_fields(Parameters.INSERT_MAXTEXTFIELDS, scenario);
                 break;
             case 3:                                 // Int Fields
-                end = 970;  // Limite de colunas do OracleInsert = 1000
-                or.insert_int_fields(end, scenario);
+                // Limite de colunas do OracleInsert = 1000 - 20 Colunas de Texto - 1 ID
+                or.insert_int_fields(Parameters.INSERT_MAXINTFIELDS, scenario);
                 break;
             case 4:                                 // Indexed Fields
-                end = 990;  // Limite de colunas do OracleInsert = 1000
-                or.insert_indexed_fields(end);
+                // Limite de colunas do OracleInsert = 1000 - 5 INTS - 1 ID
+                or.insert_indexed_fields(Parameters.INSERT_MAXTEXTFIELDS);
                 break;
         }
     }
 
     private static void search() throws Exception {
-        String [] vec = new String[30];
-        vec[0] = "100";                     // Ops per sec
-        vec[1] = "10";                      // Num Threads
-        vec[3] = "10";                      // Seconds
-        vec[4] = "20";                      // Field Length
-        vec[5] = "S";                       // Dictionary
-        vec[6] = "20";                      // Text Fields
-        vec[7] = "5";                       // Int Fields
-        
-        vec[2] = "20";                      // Num Words    - Deprecated
-
-
+        int ind;
         switch (scenario) {                 // Indexed fields
-            case 1:  vec[8] = "1"; break;
-            case 2:  vec[8] = "10"; break;
-            default: vec[8] = "20";
+            case 1:  ind = 1; break;
+            case 2:  ind = 10; break;
+            default: ind = 20;
         }
-        vec[9] = "10";                       // Resultados
 
-        OracleSearch oracle = new OracleSearch(vec);
-        
+        OracleSearch oracle = new OracleSearch(ind);
         switch (variable) {
             case 0:
-                int seconds = 10;
-                if (var == -1)
-                    var = 20;
-                oracle.search_seconds(var, seconds, scenario);
-                break;
-            case 1:
-                int threads = 200;
-                oracle.search_threads(threads);
+                int textfields = Parameters.TEXT;
+                if (var != -1)
+                    textfields = var * Parameters.INSERT_FIELDS_FACTOR;
+                
+                oracle.search_seconds(textfields, scenario);
                 break;
             case 2:
-                int beg_ops = 10;
-                int end_ops;
+                int min_ops = 10;
+                int max_ops;
                 switch (scenario) {
-                    case 1:  end_ops = 500; break;
-                    case 2:  end_ops = 200; break;
-                    default: end_ops = 100;
+                    case 1:  max_ops = 2000; break;
+                    case 2:  max_ops = 700; break;
+                    default: max_ops = 500;
                 }
-                oracle.search_opspersec(beg_ops, end_ops);
+                oracle.search_opspersec(min_ops, max_ops);
                 break;
             case 3:
-                int results = 500;
-                oracle.search_results(results);
+                oracle.search_results(Parameters.SEARCH_MAXRESULTS);
+                break;
+            case 4:
+                int bd_text_fields = var * Parameters.INSERT_INDEXED_FIELDS_FACTOR;
+                oracle.search_indexed(bd_text_fields);
                 break;
         }
     }

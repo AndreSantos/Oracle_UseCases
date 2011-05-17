@@ -1,5 +1,6 @@
 package oracle;
 
+
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -30,11 +31,12 @@ class OracleReqThread extends Thread {
     static String database = "SOLR_DB";
 
     
-    static int ops_sec;
+    private int ops_sec;
     static int secs, fieldlength;
     static int textfields, intfields;
     static int indexed, results;
     static int ind = 0;
+    static int ops = 0;
     private int id;
 
 
@@ -97,19 +99,20 @@ class OracleReqThread extends Thread {
         for (int k = 0;k < secs; k++) {
             long tempo = 0;
             for (int l = 0;l < ops_sec; l++) {
+                if (tempo > 1050)
+                    break;
                 String query = build_query();
-                //System.out.println(query);
                 try {
-                    CallableStatement cstmt = getOracleCallableStatement(query);
-                    tempo += getResponse(cstmt, k);
-                    cstmt.close();
+                    long t = getResponse(k, query);
+                    tempo += t;
+                    //if (t <= 1) System.out.println(query);
                 } catch (Exception ex) {
                     Logger.getLogger(OracleReqThread.class.getName()).log(Level.SEVERE, null, ex);
                 }
             }
             if (tempo > 1050) {
                 //System.out.println("CUT: " + (k+1) + " (Thread " + id + ": " + tempo + " > 1s)");
-                time[k] = -1;
+                time[k] = -10000000;
             }
             while (tempo < 950) {
                 long start = System.currentTimeMillis();
@@ -124,20 +127,24 @@ class OracleReqThread extends Thread {
         }
     }
 
-    private synchronized long getResponse(CallableStatement cstmt, int s) throws SQLException {
+    private synchronized long getResponse(int s, String query) throws SQLException, Exception {
         long start = System.currentTimeMillis();
+        CallableStatement cstmt = getOracleCallableStatement(query);
         ResultSet rs = cstmt.executeQuery();
-        long end   = System.currentTimeMillis();
         int i = 0;
-        while ( rs.next() )     i++;
-        
+        while ( rs.next() )
+            i++;
         rs.close();
+        cstmt.close();
+        long end   = System.currentTimeMillis();
         time[s] += end - start;
         docs[s] += i;
+        if (s > 0)
+            ops++;
         return end - start;
     }
     
-    private static String build_query() {
+    private String build_query() {
         String word = tune_string_by_size();
         String s = "SELECT * FROM " + database + " WHERE (";
         for (int k = 1; k <= indexed; k++) {
@@ -158,13 +165,17 @@ class OracleReqThread extends Thread {
         return String.valueOf((char) ('A' + (l / 23))) + String.valueOf((char) ('A' + (l % 23))) + s;
     }
 
-    private static String tune_string_by_size() {
+    private synchronized int change_index() {
         ind = (ind + 1) % total;
-        int len = palavras[ind].length();
-        String word =  palavras[ind];
-        while (len < fieldlength) {
-            word += "-" + palavras[ind];
-            len  += 1   + palavras[ind].length();
+        return ind;
+    }
+    private String tune_string_by_size() {
+        int index = change_index();
+        int len = palavras[index].length();
+        String word = palavras[index];
+        while (len <= fieldlength) {
+            word += "-" + palavras[index];
+            len  += 1   + palavras[index].length();
         }
         return word.substring(0, fieldlength);
     }
@@ -247,6 +258,8 @@ public class OracleSearch
 
         OracleReqThread.palavras  = palavras;
         OracleReqThread.total     = total;
+        OracleReqThread.ops       = 0;
+        OracleReqThread.ind       = 0;
 
         
         int operations = ops_per_sec;
@@ -263,15 +276,12 @@ public class OracleSearch
 
         float [] docs = new float[10000];
         float [] time = new float[10000];
-        float d_mean = (float) 0.0, t_mean = (float) 0.0;
-        boolean error = false;
         for (int k = 1;k < secs; k++) {
             docs[k] = 0;
             time[k] = 0;
             for (int l = 0;l < num_threads; l++) {
                 if (threads.get(l).getTime(k) < 0) {
-                    time[k] = -1.0f;
-                    error = true;
+                    time[k] = -10000000.0f;
                     break;
                 }
                 else {
@@ -279,69 +289,71 @@ public class OracleSearch
                     docs[k] += threads.get(l).getDocs(k);
                 }
             }
-            t_mean += time[k];
-            d_mean += docs[k];
+            //System.out.println(time[k] + " " + k + ": " + threads.get(0).getTime(k) + " , " +  threads.get(1).getTime(k) + " , " +  threads.get(2).getTime(k));
+            //System.out.println(time[k] + "   d: " + docs[k]);
             time[k] /= ops_per_sec;
             docs[k] /= ops_per_sec;
-            //System.out.println("Second " + k + ": " + docs[k] + " e " + time[k]);
         }
 
-        if (variable == 0 || variable == 2 || variable == 3) {
-            float m = (float) 0.0;
-            float t = (float) 0.0;
-            int s = 0;
-            for (int k = 0;k < secs; k++)
-                if (time[k] > 0) {
-                    m += time[k];
-                    t += docs[k];
-                    s++;
+
+
+        float arr[]  = new float[time.length];
+        float arr2[] = new float[time.length];
+
+        int i = 0;
+        for (int k = 0;k < secs; k++)
+            if (time[k] > (float) 0.0) {
+                arr[i]    = time[k];
+                arr2[i++] = docs[k];
+            }
+        int off = 2;
+        if (i < off + off + off)
+            return 0;
+
+        for (int k = 0;k < i; k++)
+            for (int l = k + 1;l < i; l++)
+                if (arr[k] > arr[l]) {
+                    float a = arr[k];
+                    arr[k] = arr[l];
+                    arr[l] = a;
+                    float b = arr2[k];
+                    arr2[k] = arr2[l];
+                    arr2[l] = b;
                 }
-            m /= s;
-            t /= s;
-            if (s == 0) {
-                System.out.print(' ');
-                return 0;
-            }
-            else {
-                if (variable == 2)
-                    System.out.print(ops_per_sec + ";");
-                if (variable == 3)
-                    System.out.print(results + ";");
-                System.out.println(s + ";" + m + ";" + t);
-            }
+        float m2 = arr[0] + arr[1] + arr[i - 1] + arr[i - 2];
+        float m = (float) 0.0;
+        float t = (float) 0.0;
+        int s = 0;
+        for (int k = off;k < i - off; k++) {
+            m += arr[k];
+            t += arr2[k];
+            m2 += arr[k];
+            s++;
         }
-        if (variable == 1) {
-            if (error == true)
-                return 0;
-            t_mean = time[1];
-            d_mean = docs[1];
-            time[1] /= ((secs - 1) * ops_per_sec);
-            docs[1] /= ((secs - 1) * ops_per_sec);
-            System.out.println(num_threads + ";" + t_mean + ";" + d_mean);
+        m /= s;
+        t /= s;
+        if (s == 0) {
+            System.out.print(' ');
+            return 0;
         }
-        /*
-        if (variable == 2) {
-            if (time[1] < 0) {
-                System.out.println("Problem: " + ops_per_sec);
-                return 0;
+        else {
+            if (variable == 2)
+                System.out.print(ops_per_sec + ";");
+            if (variable == 3)
+                System.out.print(results + ";");
+            System.out.print(s + ";" + m + ";" + t + ";" + OracleReqThread.ops);
+            for (int k = 0;k < i; k++) {
+                System.out.printf("%.1f;",arr[k]);
             }
-            t_mean = time[1];
-            d_mean = docs[1];
-            time[1] /= ((secs - 1) * ops_per_sec);
-            docs[1] /= ((secs - 1) * ops_per_sec);
-            System.out.println(ops_per_sec + ";" + t_mean + ";" + d_mean);
+            System.out.printf("%.2f\n",m2 / i);
         }
-        */
         return 1;
     }
     
     
     // ============================== START FUNCTIONS ==================================
-    public void search_seconds(int text, int e,int scenario) throws Exception {
+    public void search_seconds(int text,int scenario) throws Exception {
         variable    = 0;
-        secs        = e + 1;
-        ops_per_sec = 50;
-        num_threads = 5;
         textfields  = text;
 
         switch (scenario) {
@@ -358,64 +370,66 @@ public class OracleSearch
             System.out.println("-1;-1");
     }
 
-    public void search_threads(int t) throws InterruptedException, Exception {
+    public void search_indexed(int ind) throws Exception {
         variable    = 1;
-        secs        = 5 + 1;
-        ops_per_sec = 1500;
+        textfields  = Parameters.SEARCH_MAXTEXTFIELDS;
+        indexed     = ind;
 
-        for (int k=10;k<=t;k++) {
-            num_threads = k;
-            Thread.sleep(4000);
-            searchdata();
+        int times = 0;
+        while (searchdata() == 0 && times <= 10) {
+            times++;
         }
+        if (times > 10)
+            System.out.println("-1;-1");
     }
 
     public void search_opspersec(int b, int e) throws InterruptedException, Exception {
         variable        = 2;
-        num_threads     = 10;
-        secs            = 10 + 1;
 
+        int s = secs;
         for (int k=b;k <= e; k += b) {
             ops_per_sec = k;
+            
             if (searchdata() == 0)
                 k -= b;
 
             if (k == 200)
                 b = 50;
+            
+            Thread.sleep(Parameters.REST);
         }
     }
     
     public void search_results(int res) throws InterruptedException, IOException, Exception {
         variable        = 3;
-        num_threads     = 10;
-        secs            = 10 + 1;
-        ops_per_sec     = 50;
 
         int b = 10;
         for (int k=b;k <= res; k += b) {
             results = k;
             if (searchdata() == 0)
-                k-= b;
+                k -= b;
             
-            Thread.sleep(1000);
+            Thread.sleep(Parameters.REST);
         }
     }
 
     
-    public OracleSearch(String [] args) throws Exception {
+    public OracleSearch(int ind) throws Exception {
         // Parametros
-        ops_per_sec     = Integer.parseInt(args[0]);
-        num_threads     = Integer.parseInt(args[1]);
-        nwords          = Integer.parseInt(args[2]);
-        secs            = Integer.parseInt(args[3]);
-        fieldlength     = Integer.parseInt(args[4]);
-        textfields      = Integer.parseInt(args[6]);
-        intfields       = Integer.parseInt(args[7]);
-        indexed         = Integer.parseInt(args[8]);
-        results         = Integer.parseInt(args[9]);
+        nwords      = Parameters.WORDS;
+
+        textfields  = Parameters.TEXT;
+        intfields   = Parameters.INT;
+        fieldlength = Parameters.FIELDLENGTH;
+        
+        results     = Parameters.RESULTS;
+        secs        = Parameters.SECONDS;
+        ops_per_sec = Parameters.OPS;
+        num_threads = Parameters.THREADS;
+
+        indexed     = ind;
 
         // Dicionario
-        //dictionary_path = "dics/dic_" + args[5] + ".txt";
         dictionary_path = "dics/dic.txt";
         lerPalavras();
     }
